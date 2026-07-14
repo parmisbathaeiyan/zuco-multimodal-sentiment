@@ -65,9 +65,9 @@ time samples in a sentence. Pass `--line-length sum` to reproduce the earlier
 cumulative definition as a sensitivity analysis.
 
 The raw files, sentence labels, and cache belong on Drive rather than in the
-repository. The Colab notebook reads the fixed labels CSV directly from the raw
-ZuCo folder and uses a versioned feature folder, so extraction is performed once
-and reused.
+repository. The Colab notebook reads the fixed labels CSV from the main Thesis
+data folder and the subject files from its `zuco_og_raw` subfolder. It uses a
+versioned feature folder, so extraction is performed once and reused.
 
 ## Colab
 
@@ -102,7 +102,7 @@ Build the reusable feature cache:
 ```bash
 python extract_features.py \
   --mat-dir /path/to/zuco_og_raw \
-  --labels-csv /path/to/zuco_og_raw/zuco_sentiment_labels_task1_fixed.csv \
+  --labels-csv /path/to/Thesis/Data/zuco_sentiment_labels_task1_fixed.csv \
   --out-dir /path/to/drive/zuco_classical_features/classical_v2_normalized
 ```
 
@@ -110,7 +110,7 @@ Validate the cache:
 
 ```bash
 python inspect_data.py \
-  --labels-csv /path/to/zuco_og_raw/zuco_sentiment_labels_task1_fixed.csv \
+  --labels-csv /path/to/Thesis/Data/zuco_sentiment_labels_task1_fixed.csv \
   --features-dir /path/to/drive/zuco_classical_features/classical_v2_normalized
 ```
 
@@ -118,7 +118,7 @@ Run the default three-seed suite:
 
 ```bash
 python run.py \
-  --labels-csv /path/to/zuco_og_raw/zuco_sentiment_labels_task1_fixed.csv \
+  --labels-csv /path/to/Thesis/Data/zuco_sentiment_labels_task1_fixed.csv \
   --features-dir /path/to/drive/zuco_classical_features/classical_v2_normalized \
   --results-base /path/to/drive/zuco_multimodal_results \
   --run-tag v1_full
@@ -128,7 +128,7 @@ A narrower experiment is selected with `--setups` and `--seeds`:
 
 ```bash
 python run.py \
-  --labels-csv /path/to/zuco_og_raw/zuco_sentiment_labels_task1_fixed.csv \
+  --labels-csv /path/to/Thesis/Data/zuco_sentiment_labels_task1_fixed.csv \
   --features-dir /path/to/features \
   --results-base /path/to/results \
   --run-tag v1_gated \
