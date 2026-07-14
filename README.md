@@ -64,10 +64,11 @@ than cumulative path length. This removes its direct dependence on the number of
 time samples in a sentence. Pass `--line-length sum` to reproduce the earlier
 cumulative definition as a sensitivity analysis.
 
-The raw files, sentence labels, and cache belong on Drive rather than in the
-repository. The Colab notebook reads the fixed labels CSV from the main Thesis
-data folder and the subject files from its `zuco_og_raw` subfolder. It uses a
-versioned feature folder, so extraction is performed once and reused.
+The raw files, sentence labels, and reusable artifacts belong on Drive rather
+than in the repository. The Colab notebook reads the fixed labels CSV from the
+main Thesis data folder and the subject files from its `zuco_og_raw` subfolder.
+Extracted EEG features are stored under the project's `CachedArtifacts` folder,
+so extraction is performed once and reused.
 
 ## Colab
 
@@ -81,8 +82,14 @@ run, and save. The notebook:
 4. builds or resumes the classical feature cache;
 5. validates text/EEG alignment;
 6. runs a short EEG-only smoke test;
-7. launches the complete experiment suite;
-8. displays the saved summary and plots.
+7. prepares one persistent LaBSE copy after explicit confirmation;
+8. launches the complete experiment suite;
+9. displays the saved summary and plots.
+
+The first text-model run offers to download about 1.90 GB for LaBSE into Drive.
+Later Colab sessions reuse that copy. At the start of a session, the notebook
+copies it to Colab's temporary disk once so repeated fold initialization does
+not read the large weights directly from mounted Drive.
 
 `RUN_TAG` is the version of an experiment. Re-running the same tag skips completed
 setup/seed files and resumes the missing work. Change the tag when a model or
@@ -137,6 +144,16 @@ python run.py \
 ```
 
 ## Drive result layout
+
+Reusable artifacts and run outputs are kept separate:
+
+```text
+MyDrive/Thesis/
+  CachedArtifacts/zuco_multimodal_sentiment/
+    eeg_features/classical_v2_normalized_line_length/
+    models/LaBSE/
+  Results/zuco_multimodal_sentiment/
+```
 
 Every setup and seed is saved immediately and independently:
 

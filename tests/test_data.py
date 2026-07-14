@@ -39,6 +39,21 @@ class DataTests(unittest.TestCase):
         self.assertAlmostEqual(float(processor.median[0]), 2.0)
         self.assertAlmostEqual(float(processor.median[1]), 5.0)
 
+    def test_preprocessor_zeros_features_missing_from_training_fold(self):
+        eeg = np.array(
+            [
+                [[1.0, np.nan]],
+                [[3.0, np.nan]],
+                [[5.0, 900.0]],
+            ],
+            dtype=np.float32,
+        )
+        mask = np.ones((3, 1), dtype=bool)
+        processor = FoldPreprocessor().fit(eeg, mask, np.array([0, 1]))
+        transformed = processor.transform(eeg, mask)
+        self.assertEqual(processor.n_all_missing_features, 1)
+        np.testing.assert_array_equal(transformed[..., 1], 0.0)
+
     def test_shuffle_stays_inside_each_split(self):
         eeg = np.arange(12, dtype=np.float32).reshape(6, 1, 2)
         mask = np.ones((6, 1), dtype=bool)

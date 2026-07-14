@@ -3,6 +3,7 @@
 import glob
 import json
 import os
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -114,9 +115,12 @@ class FoldPreprocessor:
         rows = eeg[train_indices][subject_mask[train_indices]]
         if not len(rows):
             raise ValueError("training fold has no EEG rows")
-        with np.errstate(all="ignore"):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
             median = np.nanmedian(rows, axis=0)
-        self.median = np.where(np.isfinite(median), median, 0.0).astype(np.float32)
+        self.observed_features = np.isfinite(median)
+        self.n_all_missing_features = int((~self.observed_features).sum())
+        self.median = np.where(self.observed_features, median, 0.0).astype(np.float32)
         filled = np.where(np.isfinite(rows), rows, self.median)
         self.mean = filled.mean(axis=0, dtype=np.float64).astype(np.float32)
         self.std = filled.std(axis=0, dtype=np.float64).astype(np.float32)
@@ -126,6 +130,8 @@ class FoldPreprocessor:
     def transform(self, eeg, subject_mask):
         filled = np.where(np.isfinite(eeg), eeg, self.median)
         scaled = ((filled - self.mean) / self.std).astype(np.float32)
+        # A feature unseen in the training fold carries no estimable signal.
+        scaled[..., ~self.observed_features] = 0.0
         scaled[~subject_mask] = 0.0
         return scaled
 

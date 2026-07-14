@@ -44,6 +44,19 @@ def build_optimizer(model, cfg):
     return torch.optim.AdamW(groups, weight_decay=cfg.weight_decay)
 
 
+def _grad_scaler(use_amp):
+    """Use the current AMP API while retaining compatibility with older torch."""
+    if hasattr(torch, "amp") and hasattr(torch.amp, "GradScaler"):
+        return torch.amp.GradScaler("cuda", enabled=use_amp)
+    return torch.cuda.amp.GradScaler(enabled=use_amp)
+
+
+def _autocast(device, use_amp):
+    if hasattr(torch, "amp") and hasattr(torch.amp, "autocast"):
+        return torch.amp.autocast(device_type=device.type, enabled=use_amp)
+    return torch.cuda.amp.autocast(enabled=use_amp)
+
+
 @torch.no_grad()
 def evaluate(model, loader, device, criterion):
     model.eval()
@@ -105,7 +118,7 @@ def train_fold(
     )
     criterion = nn.CrossEntropyLoss()
     use_amp = device.type == "cuda"
-    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+    scaler = _grad_scaler(use_amp)
 
     best_state = None
     best_val_f1 = -1.0
@@ -122,7 +135,7 @@ def train_fold(
             labels_batch = batch.pop("labels")
             batch.pop("sentence_index")
             optimizer.zero_grad(set_to_none=True)
-            with torch.cuda.amp.autocast(enabled=use_amp):
+            with _autocast(device, use_amp):
                 logits, _ = model(**batch)
                 loss = criterion(logits, labels_batch)
             scaler.scale(loss).backward()

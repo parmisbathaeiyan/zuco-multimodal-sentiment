@@ -70,6 +70,9 @@ def run_one_seed(data, setup_name, seed, cfg, run_dir, overwrite=False):
             device=device,
         )
         fold_result["fold"] = fold
+        fold_result["n_all_missing_train_features"] = (
+            preprocessor.n_all_missing_features
+        )
         fold_results.append(fold_result)
         oof_predictions[indices] = predictions
         oof_targets[indices] = targets
@@ -77,7 +80,8 @@ def run_one_seed(data, setup_name, seed, cfg, run_dir, overwrite=False):
             f"  fold {fold}/{cfg.n_folds}: "
             f"acc {fold_result['test']['accuracy']:.3f}, "
             f"macro-F1 {fold_result['test']['macro_f1']:.3f}, "
-            f"epoch {fold_result['best_epoch']}"
+            f"epoch {fold_result['best_epoch']}, "
+            f"all-missing train features {preprocessor.n_all_missing_features}"
         )
 
     if (oof_predictions < 0).any() or (oof_targets < 0).any():
