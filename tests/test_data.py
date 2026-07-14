@@ -79,9 +79,11 @@ class DataTests(unittest.TestCase):
             with open(os.path.join(directory, "feature_names.json"), "w") as handle:
                 json.dump(names, handle)
             width = 2 * N_FAMILIES
+            features = np.ones((3, width), dtype=np.float32)
+            features[:, 2] = np.nan
             np.savez_compressed(
                 os.path.join(directory, "S1.npz"),
-                X=np.ones((3, width), dtype=np.float32),
+                X=features,
                 sentence_id=np.array([30, 10, 20]),
                 label=np.array([1, -1, 0]),
             )
@@ -89,6 +91,10 @@ class DataTests(unittest.TestCase):
             self.assertEqual(data.labels.tolist(), [0, 1, 2])
             self.assertEqual(tuple(data.eeg.shape), (3, 1, width))
             self.assertTrue(data.subject_mask.all())
+            self.assertEqual(data.summary()["n_globally_all_missing_features"], 1)
+            self.assertEqual(
+                data.summary()["globally_all_missing_features"], [names[2]]
+            )
 
 
 if __name__ == "__main__":

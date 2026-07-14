@@ -30,10 +30,19 @@ class MultimodalData:
     def summary(self):
         counts = np.bincount(self.labels, minlength=3)
         per_sentence = self.subject_mask.sum(axis=1)
+        usable_rows = self.eeg[self.subject_mask]
+        observed_features = np.isfinite(usable_rows).any(axis=0)
+        all_missing_features = [
+            name
+            for name, observed in zip(self.feature_names, observed_features)
+            if not observed
+        ]
         return {
             "n_sentences": int(len(self.labels)),
             "n_subjects": int(len(self.subjects)),
             "n_features": int(self.eeg.shape[-1]),
+            "n_globally_all_missing_features": len(all_missing_features),
+            "globally_all_missing_features": all_missing_features,
             "n_channels": int(self.n_channels),
             "n_feature_families": int(N_FAMILIES),
             "usable_subject_sentence_rows": int(self.subject_mask.sum()),

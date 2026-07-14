@@ -82,14 +82,14 @@ run, and save. The notebook:
 4. builds or resumes the classical feature cache;
 5. validates text/EEG alignment;
 6. runs a short EEG-only smoke test;
-7. prepares one persistent LaBSE copy after explicit confirmation;
+7. prepares one persistent LaBSE copy;
 8. launches the complete experiment suite;
 9. displays the saved summary and plots.
 
-The first text-model run offers to download about 1.90 GB for LaBSE into Drive.
-Later Colab sessions reuse that copy. At the start of a session, the notebook
-copies it to Colab's temporary disk once so repeated fold initialization does
-not read the large weights directly from mounted Drive.
+The first text-model run downloads about 1.90 GB for LaBSE into Drive. Later
+Colab sessions reuse that copy. At the start of a session, the notebook copies
+it to Colab's temporary disk once so repeated fold initialization does not read
+the large weights directly from mounted Drive.
 
 `RUN_TAG` is the version of an experiment. Re-running the same tag skips completed
 setup/seed files and resumes the missing work. Change the tag when a model or
