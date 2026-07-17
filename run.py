@@ -70,9 +70,10 @@ def main():
         if (
             existing.get("training") != manifest["training"]
             or existing.get("paths") != manifest["paths"]
+            or existing.get("data") != manifest["data"]
         ):
             raise SystemExit(
-                "this run tag already uses different training settings or data paths; "
+                "this run tag already uses different training settings or data; "
                 "choose a new --run-tag"
             )
         manifest["setups"] = sorted(set(existing.get("setups", [])) | set(args.setups))

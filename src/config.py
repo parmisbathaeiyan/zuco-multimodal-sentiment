@@ -9,6 +9,10 @@ ID_TO_LABEL = {value: key for key, value in LABEL_TO_ID.items()}
 CLASS_NAMES = ["negative", "neutral", "positive"]
 NUM_CLASSES = len(CLASS_NAMES)
 
+# The final channel in ZuCo's retained order is Cz, the flat reference channel.
+ZUCO_REFERENCE_CHANNEL_INDEX = 104
+ZUCO_REFERENCE_CHANNEL_LABEL = "Cz"
+
 DEFAULT_SETUPS = [
     "text_frozen",
     "text_finetune",

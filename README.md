@@ -7,11 +7,12 @@ and control experiments in one evaluation pipeline so their scores are directly
 comparable.
 
 The main model uses LaBSE's `[CLS]` representation and a compact EEG set encoder.
-Each subject's 2,520 classical features are reshaped into 105 electrodes x 24
-feature families. A shared MLP encodes the electrodes, attention pools them into
-one subject representation, and a masked mean combines the available subjects
-for the sentence. The text and EEG representations are then fused for ternary
-sentiment classification.
+The reusable cache contains 2,520 classical features per subject sentence. The
+flat Cz reference channel is excluded during loading, leaving 104 electrodes x
+24 feature families = 2,496 model inputs. A shared MLP encodes the electrodes,
+attention pools them into one subject representation, and a masked mean combines
+the available subjects for the sentence. The text and EEG representations are
+then fused for ternary sentiment classification.
 
 ## Experiment setups
 
@@ -200,4 +201,5 @@ src/experiment.py         setup/seed orchestration
 src/reporting.py          summaries, bootstrap deltas, and plots
 notebooks/                minimal Colab runner
 tests/                    feature, split, preprocessing, and model checks
+PROJECT_LOG.md            concise experiment and implementation decisions
 ```

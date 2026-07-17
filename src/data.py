@@ -11,7 +11,11 @@ import torch
 from sklearn.model_selection import StratifiedKFold, train_test_split
 from torch.utils.data import Dataset
 
-from .config import LABEL_TO_ID
+from .config import (
+    LABEL_TO_ID,
+    ZUCO_REFERENCE_CHANNEL_INDEX,
+    ZUCO_REFERENCE_CHANNEL_LABEL,
+)
 from .features import N_FAMILIES
 from .labels import load_labels
 
@@ -26,6 +30,7 @@ class MultimodalData:
     subjects: list
     feature_names: list
     n_channels: int
+    dropped_reference_features: list
 
     def summary(self):
         counts = np.bincount(self.labels, minlength=3)
@@ -41,6 +46,15 @@ class MultimodalData:
             "n_sentences": int(len(self.labels)),
             "n_subjects": int(len(self.subjects)),
             "n_features": int(self.eeg.shape[-1]),
+            "dropped_reference_channel": (
+                {
+                    "index": ZUCO_REFERENCE_CHANNEL_INDEX,
+                    "label": ZUCO_REFERENCE_CHANNEL_LABEL,
+                    "n_features": len(self.dropped_reference_features),
+                }
+                if self.dropped_reference_features
+                else None
+            ),
             "n_globally_all_missing_features": len(all_missing_features),
             "globally_all_missing_features": all_missing_features,
             "n_channels": int(self.n_channels),
@@ -61,11 +75,26 @@ class MultimodalData:
 def load_multimodal_data(labels_csv, features_dir):
     labels = load_labels(labels_csv)
     with open(os.path.join(features_dir, "feature_names.json")) as handle:
-        names = json.load(handle)
-    if len(names) % N_FAMILIES:
+        cached_names = json.load(handle)
+    if len(cached_names) % N_FAMILIES:
         raise ValueError(
-            f"{len(names)} features cannot be reshaped into {N_FAMILIES} families"
+            f"{len(cached_names)} features cannot be reshaped into {N_FAMILIES} families"
         )
+
+    reference_suffix = f"_ch{ZUCO_REFERENCE_CHANNEL_INDEX}"
+    keep_features = np.asarray(
+        [not name.endswith(reference_suffix) for name in cached_names],
+        dtype=bool,
+    )
+    dropped_reference_features = [
+        name for name, keep in zip(cached_names, keep_features) if not keep
+    ]
+    if len(dropped_reference_features) not in (0, N_FAMILIES):
+        raise ValueError(
+            "reference-channel feature block is incomplete: "
+            f"expected {N_FAMILIES}, found {len(dropped_reference_features)}"
+        )
+    names = [name for name, keep in zip(cached_names, keep_features) if keep]
     n_channels = len(names) // N_FAMILIES
 
     files = sorted(glob.glob(os.path.join(features_dir, "*.npz")))
@@ -80,7 +109,7 @@ def load_multimodal_data(labels_csv, features_dir):
 
     for subject_index, path in enumerate(files):
         cached = np.load(path, allow_pickle=True)
-        if cached["X"].shape[1] != len(names):
+        if cached["X"].shape[1] != len(cached_names):
             raise ValueError(f"feature width mismatch in {path}")
         for cache_row, sentence_id in enumerate(cached["sentence_id"].astype(int)):
             row = id_to_row.get(int(sentence_id))
@@ -93,7 +122,7 @@ def load_multimodal_data(labels_csv, features_dir):
                     f"label mismatch for sentence {sentence_id} in {path}: "
                     f"{observed} != {expected}"
                 )
-            values = cached["X"][cache_row].astype(np.float32)
+            values = cached["X"][cache_row, keep_features].astype(np.float32)
             if np.isfinite(values).any():
                 eeg[row, subject_index] = values
                 mask[row, subject_index] = True
@@ -114,6 +143,7 @@ def load_multimodal_data(labels_csv, features_dir):
         subjects=subjects,
         feature_names=names,
         n_channels=n_channels,
+        dropped_reference_features=dropped_reference_features,
     )
 
 

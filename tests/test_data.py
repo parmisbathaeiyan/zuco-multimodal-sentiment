@@ -75,10 +75,10 @@ class DataTests(unittest.TestCase):
                     "20,neutral sentence,0\n"
                     "30,positive sentence,1\n"
                 )
-            names = feature_names(2)
+            names = feature_names(105)
             with open(os.path.join(directory, "feature_names.json"), "w") as handle:
                 json.dump(names, handle)
-            width = 2 * N_FAMILIES
+            width = 105 * N_FAMILIES
             features = np.ones((3, width), dtype=np.float32)
             features[:, 2] = np.nan
             np.savez_compressed(
@@ -89,8 +89,13 @@ class DataTests(unittest.TestCase):
             )
             data = load_multimodal_data(labels_path, directory)
             self.assertEqual(data.labels.tolist(), [0, 1, 2])
-            self.assertEqual(tuple(data.eeg.shape), (3, 1, width))
+            self.assertEqual(tuple(data.eeg.shape), (3, 1, 104 * N_FAMILIES))
+            self.assertEqual(data.n_channels, 104)
             self.assertTrue(data.subject_mask.all())
+            self.assertEqual(
+                data.summary()["dropped_reference_channel"],
+                {"index": 104, "label": "Cz", "n_features": N_FAMILIES},
+            )
             self.assertEqual(data.summary()["n_globally_all_missing_features"], 1)
             self.assertEqual(
                 data.summary()["globally_all_missing_features"], [names[2]]
