@@ -85,6 +85,26 @@ The default comparison suite was:
 
 Frozen fusion variants were also made available from the command line.
 
+### Planned first experiment table
+
+The first experiment table was defined around six conceptual comparisons. They
+map to the implemented setup names as follows:
+
+| Planned comparison | Implemented setup |
+| --- | --- |
+| LaBSE-CLS text only | `text_frozen` and `text_finetune` |
+| EEG only | `eeg_only` |
+| Text + EEG concatenation | `concat_finetune` |
+| Text + EEG gated fusion | `gated_finetune` |
+| Text + shuffled EEG | `gated_shuffled_finetune` |
+| Text + random-noise modality | `gated_noise_finetune` |
+
+The table has seven result rows because the text-only comparison is evaluated
+in both frozen and fine-tuned forms. The shuffled and noise rows use the same
+gated architecture as `gated_finetune`, changing only the EEG input. This keeps
+them as direct controls for whether any gated-fusion gain depends on correctly
+aligned EEG rather than extra parameters or regularization.
+
 ### Controls and evaluation protocol
 
 - Outer stratified folds split complete sentences, not subject-sentence rows.
