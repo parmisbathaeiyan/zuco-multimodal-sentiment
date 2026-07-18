@@ -344,3 +344,38 @@ run tag: v1_full_smoke_multimodal
 This test checks loading LaBSE from the persistent artifact, fine-tuning the
 text encoder, gated text–EEG fusion, CUDA memory use, and paired text/fusion
 report generation. It must pass before starting the full experiment suite.
+
+## 2026-07-18 — Complete the text + gated-fusion smoke test
+
+Section 7 successfully reused the persistent LaBSE copy from Drive and copied it
+to `/content/cached_artifacts/LaBSE`. No model network download was needed for
+the new runtime.
+
+The `v1_full_smoke_multimodal` run then completed on CUDA without an
+out-of-memory error, shape error, unavailable training feature, or result-saving
+error.
+
+```text
+text_finetune
+  fold 1: accuracy 0.440, macro-F1 0.350
+  fold 2: accuracy 0.445, macro-F1 0.394
+  OOF:    accuracy 0.4425, macro-F1 0.373680
+
+gated_finetune
+  fold 1: accuracy 0.510, macro-F1 0.470
+  fold 2: accuracy 0.395, macro-F1 0.333
+  OOF:    accuracy 0.4525, macro-F1 0.423656
+```
+
+For this smoke run, gated fusion had a paired macro-F1 difference of `+0.049975`
+relative to `text_finetune`. The 200-sample bootstrap interval was
+`[0.003591, 0.115736]`. The mean gate was `0.119214`, still close to its initial
+value because training lasted only one epoch.
+
+These numbers were recorded as a successful integration check, not as evidence
+that EEG improves classification. The run used one seed, two folds, one epoch,
+and a small bootstrap. The full multi-seed experiment is required before
+interpreting modality effects.
+
+After this smoke test passed, section 9 was started with the full comparison
+suite under `v1_full`.
