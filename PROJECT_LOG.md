@@ -392,3 +392,36 @@ All official smoke tests and full experiments will therefore continue on Colab
 CUDA. The Mac will remain limited to lightweight source editing and checks that
 require no project dependency installation, model download, dataset download,
 or training.
+
+## 2026-07-18 — Full run interrupted and audited from Drive
+
+The `v1_full` Colab runtime disconnected before the suite completed. Drive was
+inspected to identify the last durable checkpoint. Seventeen of the planned 21
+setup/seed JSON files had been saved:
+
+```text
+text_frozen:                 seeds 42, 52, 62 complete
+text_finetune:               seeds 42, 52, 62 complete
+eeg_only:                    seeds 42, 52, 62 complete
+concat_finetune:             seeds 42, 52, 62 complete
+gated_finetune:              seeds 42, 52, 62 complete
+gated_shuffled_finetune:     seeds 42, 52 complete
+```
+
+The last saved file was `gated_shuffled_finetune/seed_52.json`. It was written
+at `2026-07-18 11:41:06 UTC`; no result file appeared during the following
+three-plus hours. The runtime therefore most likely disconnected while running
+`gated_shuffled_finetune` seed 62.
+
+The remaining jobs are:
+
+```text
+gated_shuffled_finetune: seed 62
+gated_noise_finetune:    seeds 42, 52, 62
+```
+
+No final `tables` or `plots` folder exists yet because report generation runs
+only after all setup/seed jobs finish. Resuming section 9 with the same
+`RUN_TAG=v1_full` will skip the 17 completed files. Any unfinished folds from
+the interrupted seed were not saved separately, so seed 62 of the shuffled
+setup will restart from its first fold.
