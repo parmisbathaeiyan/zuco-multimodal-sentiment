@@ -425,3 +425,30 @@ only after all setup/seed jobs finish. Resuming section 9 with the same
 `RUN_TAG=v1_full` will skip the 17 completed files. Any unfinished folds from
 the interrupted seed were not saved separately, so seed 62 of the shuffled
 setup will restart from its first fold.
+
+## 2026-07-19 — Full run interrupted a second time
+
+The resumed run skipped the 17 existing setup/seed files and successfully
+completed:
+
+```text
+gated_shuffled_finetune: seed 62
+gated_noise_finetune:    seeds 42, 52
+```
+
+Drive now contains 20 of the planned 21 result JSON files. The only remaining
+job is:
+
+```text
+gated_noise_finetune: seed 62
+```
+
+The console reached the model-weight load for that seed but printed no completed
+fold. Drive also contains no `seed_62.json` in the noise folder. The last durable
+result, `gated_noise_finetune/seed_52.json`, was saved at
+`2026-07-18 22:50:04 UTC`, more than eight hours before this audit. The runtime
+therefore disconnected while starting the final seed.
+
+There are still no final tables or plots. Resuming section 9 with
+`RUN_TAG=v1_full` will skip the 20 completed jobs, rerun all five folds of the
+remaining noise seed, and then build the final reports.
