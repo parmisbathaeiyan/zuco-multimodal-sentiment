@@ -511,3 +511,106 @@ weak, and fine-tuning LaBSE clearly outperformed freezing it.
 The learned gate stayed near its approximately `0.119` initialization in all
 three gated conditions. This and the negative-control results should be
 considered when choosing the next architecture or diagnostic experiment.
+
+## 2026-07-19 — Analyze the completed results in detail
+
+The 21 seed files were inspected directly rather than relying only on the
+aggregate table. The main conclusions are:
+
+1. Fine-tuning LaBSE produced the clearest real improvement in this run.
+   `text_finetune` improved mean macro-F1 from `0.5971` to `0.6766` relative to
+   `text_frozen`, a gain of about `0.0795`. The fine-tuned result was higher for
+   all three seeds.
+2. Simple concatenation did not reliably improve the fine-tuned text baseline.
+   Its per-seed macro-F1 differences were `+0.0336`, `+0.0024`, and `-0.0254`;
+   the mean paired difference was only `+0.0035`.
+3. Aligned gated fusion had per-seed differences of `+0.0343`, `+0.0538`, and
+   `-0.0122` against fine-tuned text. It improved two seeds but hurt the third,
+   and its paired interval included zero.
+4. The apparent gated gain was not specific to aligned EEG. Mean macro-F1 was
+   `0.7019` with aligned EEG, `0.7006` with shuffled EEG, and `0.7015` with
+   random noise.
+
+The saved sentence predictions made the negative-control result especially
+clear:
+
+```text
+aligned vs shuffled EEG prediction agreement
+  seed 42: 98.25%
+  seed 52: 100.00%
+  seed 62: 99.75%
+
+aligned EEG vs random noise prediction agreement
+  seed 42: 98.25%
+  seed 52: 100.00%
+  seed 62: 99.50%
+```
+
+For seed 52, all 400 class predictions were identical across aligned, shuffled,
+and noise gated models. For seed 62, aligned and shuffled differed on only one
+prediction without changing accuracy, while aligned and noise differed on two
+predictions and noise was correct on one additional sentence. For seed 42,
+aligned EEG corrected four predictions that shuffled/noise missed but lost
+three that they got right: a net difference of one sentence.
+
+The gated model therefore showed almost no sensitivity to EEG–sentence
+alignment at the final decision level. The additional branch may alter
+optimization, regularization, or random initialization relative to the
+text-only model, but the current results do not support attributing its score
+to informative aligned EEG. Identical predicted classes do not prove that all
+logits were identical, because logits were not saved, but any modality effect
+was too small to materially change the decisions.
+
+The gate is a 128-dimensional sigmoid vector initialized from logits of `-2`,
+which gives an initial mean of approximately `0.11920`. Its final mean across
+the gated runs was approximately `0.11925`–`0.11926`, with only tiny
+fold-to-fold changes. A stable mean alone cannot prove that every gate
+coordinate or the EEG projection was unused, but it agrees with the
+negative-control evidence that the model did not learn a meaningful
+alignment-dependent contribution.
+
+Class-level behavior was:
+
+| setup | negative F1 | neutral F1 | positive F1 |
+|---|---:|---:|---:|
+| `text_frozen` | 0.5524 | 0.5196 | 0.7193 |
+| `text_finetune` | 0.6392 | 0.5842 | 0.8064 |
+| `eeg_only` | 0.0541 | 0.3646 | 0.4239 |
+| `concat_finetune` | 0.6532 | 0.5898 | 0.7974 |
+| `gated_finetune` | 0.6841 | 0.6078 | 0.8139 |
+| `gated_shuffled_finetune` | 0.6822 | 0.6042 | 0.8156 |
+| `gated_noise_finetune` | 0.6822 | 0.6060 | 0.8165 |
+
+Positive sentiment was consistently easiest and neutral sentiment remained the
+hardest for the text and multimodal models. The small class-level changes from
+gated fusion were reproduced by shuffled EEG and noise. The EEG-only model
+nearly stopped predicting the negative class: across three seeds its aggregate
+negative recall was only `3.25%`. With balanced class counts, its mean accuracy
+of `0.3392` was approximately chance-level and slightly below the `0.35`
+majority-class baseline.
+
+The gated variants had lower seed-to-seed macro-F1 standard deviation
+(`0.0061`–`0.0088`) than fine-tuned text (`0.0237`), but three seeds are too few
+to treat this as strong evidence of greater robustness. Fold macro-F1 also
+varied substantially because each fold contained only about 80 test sentences.
+
+The current confidence intervals are paired sentence-level bootstrap intervals
+against the matching text-only result. The report averages the three
+seed-specific deltas and interval endpoints. They are useful diagnostics, but
+they are not a formal estimate of uncertainty across model seeds, subjects, or
+new datasets. Any thesis claim should therefore remain limited to this
+sentence-level ZuCo experiment.
+
+The appropriate conclusion for this first full experiment is a negative but
+useful one: the implemented handcrafted EEG modality did not add demonstrated
+alignment-specific sentiment information beyond fine-tuned LaBSE. This does
+not establish that ZuCo EEG is intrinsically uninformative. The result could
+also reflect the handcrafted representation, equal averaging across readers,
+text dominance during joint fine-tuning, or the current fusion mechanism.
+
+Before trying a substantially larger architecture, the next diagnostic run
+should preserve identical initialization across controls, add a zero-EEG gated
+control, save modality and logit norms, and compare frozen-text gated fusion
+against frozen text only. These checks can distinguish a genuine EEG effect
+from initialization and optimization effects and test whether fine-tuned text
+is simply overpowering the EEG branch.
