@@ -193,7 +193,7 @@ def apply_eeg_control(eeg, subject_mask, split_indices, control, seed):
     """Destroy EEG alignment without moving data across fold boundaries."""
     controlled = eeg.copy()
     controlled_mask = subject_mask.copy()
-    if control == "aligned":
+    if control in {"aligned", "zero"}:
         return controlled, controlled_mask
     rng = np.random.default_rng(seed)
     if control == "shuffled":

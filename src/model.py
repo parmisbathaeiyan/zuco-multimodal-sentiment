@@ -64,12 +64,16 @@ class MultimodalClassifier(nn.Module):
         channel_dim=32,
         eeg_dim=64,
         dropout=0.3,
+        zero_eeg_contribution=False,
     ):
         super().__init__()
         self.fusion = fusion
         self.text_mode = text_mode
+        self.zero_eeg_contribution = zero_eeg_contribution
         self.text_encoder = None
         self.eeg_encoder = None
+        if zero_eeg_contribution and fusion != "gated":
+            raise ValueError("zero_eeg_contribution is only valid for gated fusion")
 
         if fusion != "eeg":
             self.text_encoder = AutoModel.from_pretrained(model_name)
@@ -129,10 +133,19 @@ class MultimodalClassifier(nn.Module):
         ).last_hidden_state[:, 0]
         return self.text_projection(hidden)
 
-    def forward(self, input_ids, attention_mask, eeg, subject_mask, **_):
+    def forward(
+        self,
+        input_ids,
+        attention_mask,
+        eeg,
+        subject_mask,
+        return_diagnostics=False,
+        **_,
+    ):
         text_embedding = None
         eeg_embedding = None
         channel_weights = None
+        diagnostics = None
         if self.text_encoder is not None:
             text_embedding = self._text(input_ids, attention_mask)
         if self.eeg_encoder is not None:
@@ -146,10 +159,37 @@ class MultimodalClassifier(nn.Module):
             fused = self.fusion_head(torch.cat([text_embedding, eeg_embedding], dim=-1))
         else:
             gate = torch.sigmoid(self.gate_logits)
-            fused = text_embedding + gate * self.eeg_to_text(eeg_embedding)
-        return self.classifier(fused), channel_weights
+            candidate_contribution = gate * self.eeg_to_text(eeg_embedding)
+            if self.zero_eeg_contribution:
+                eeg_contribution = torch.zeros_like(candidate_contribution)
+            else:
+                eeg_contribution = candidate_contribution
+            fused = text_embedding + eeg_contribution
+
+        logits = self.classifier(fused)
+        if return_diagnostics:
+            diagnostics = {}
+            if self.fusion == "gated":
+                logits_without_eeg = self.classifier(text_embedding)
+                diagnostics = {
+                    "text_embedding_norm": text_embedding.norm(dim=-1),
+                    "eeg_embedding_norm": eeg_embedding.norm(dim=-1),
+                    "candidate_eeg_contribution_norm": candidate_contribution.norm(
+                        dim=-1
+                    ),
+                    "gated_eeg_contribution_norm": eeg_contribution.norm(dim=-1),
+                    "logits_with_eeg": logits,
+                    "logits_without_eeg": logits_without_eeg,
+                }
+            return logits, channel_weights, diagnostics
+        return logits, channel_weights
 
     def gate_mean(self):
         if not hasattr(self, "gate_logits"):
             return None
         return float(torch.sigmoid(self.gate_logits).mean().detach().cpu())
+
+    def gate_values(self):
+        if not hasattr(self, "gate_logits"):
+            return None
+        return torch.sigmoid(self.gate_logits).detach().cpu().tolist()

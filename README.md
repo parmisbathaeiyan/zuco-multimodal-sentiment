@@ -25,10 +25,14 @@ then fused for ternary sentiment classification.
 | `gated_finetune` | fine-tuned | aligned EEG | gated residual fusion |
 | `gated_shuffled_finetune` | fine-tuned | shuffled inside each split | alignment control |
 | `gated_noise_finetune` | fine-tuned | matched random noise | regularization control |
+| `gated_zero_finetune` | fine-tuned | contribution forced to zero | architecture/optimization control |
 
 Frozen variants of both fusion models are also available from the command line.
 The gated model starts with a small EEG contribution, so it behaves approximately
 like the text model until the validation data supports using the second modality.
+The aligned, shuffled, noise, and zero gated variants reset to the same task-head
+initialization for each seed and fold. Their saved initialization fingerprints
+are checked during reporting.
 
 ## Evaluation protocol
 
@@ -50,6 +54,27 @@ across a split boundary.
 Accuracy, macro-F1, weighted F1, per-class F1, confusion matrices, fold histories,
 and out-of-fold predictions are saved. Fusion models are compared with the
 matching text baseline using a paired sentence-level bootstrap interval.
+
+Five folds make every sentence a held-out test example exactly once within one
+seed. Three seeds repeat the complete five-fold procedure with different split
+and initialization randomness. Bootstrap resampling is a separate reporting
+step: it repeatedly resamples the 400 paired sentence predictions with
+replacement and recalculates the candidate-minus-baseline macro-F1 difference.
+The current report averages the three seed-specific differences and interval
+endpoints. It measures sentence-sampling uncertainty for these trained runs; it
+is not a formal interval over arbitrary seeds, unseen readers, or a new dataset.
+
+For gated runs, each held-out sentence also stores:
+
+- the text embedding norm;
+- the raw EEG embedding norm;
+- the candidate and effective gated EEG-contribution norms;
+- logits with and without the EEG contribution.
+
+Every fold stores the full final gate vector, diagnostic summaries, the explicit
+initialization seed, and a task-module initialization fingerprint. Reporting
+also creates `diagnostics.*`, `control_comparisons.*`, and
+`diagnostic_metadata.json`.
 
 ## Classical feature cache
 
@@ -86,7 +111,12 @@ run, and save. The notebook:
 7. prepares one persistent LaBSE copy;
 8. runs a short text + gated-fusion smoke test;
 9. launches the complete experiment suite;
-10. displays the saved summary and plots.
+10. displays the saved summary and plots;
+11. optionally rebuilds reports without retraining;
+12. smoke-tests the matched-control implementation;
+13. runs fine-tuned aligned, shuffled, noise, and zero controls;
+14. repeats the controls with frozen LaBSE;
+15. displays the controlled diagnostic tables and plots.
 
 The first text-model run downloads about 1.90 GB for LaBSE into Drive. Later
 Colab sessions reuse that copy. At the start of a session, the notebook copies
@@ -174,6 +204,9 @@ Every setup and seed is saved immediately and independently:
       summary.csv
       summary.json
       summary.md
+      control_comparisons.csv
+      diagnostics.csv
+      diagnostic_metadata.json
     plots/
       scores.png
       confusions.png

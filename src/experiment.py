@@ -43,6 +43,7 @@ def run_one_seed(data, setup_name, seed, cfg, run_dir, overwrite=False):
     splits = list(fold_indices(data.labels, cfg.n_folds, cfg.val_size, seed))
     oof_predictions = np.full(len(data.labels), -1, dtype=int)
     oof_targets = np.full(len(data.labels), -1, dtype=int)
+    oof_diagnostics = {}
     fold_results = []
     device = pick_device()
 
@@ -59,7 +60,7 @@ def run_one_seed(data, setup_name, seed, cfg, run_dir, overwrite=False):
         )
         preprocessor = FoldPreprocessor().fit(controlled_eeg, controlled_mask, split[0])
         prepared_eeg = preprocessor.transform(controlled_eeg, controlled_mask)
-        fold_result, predictions, targets, indices = train_fold(
+        fold_result, predictions, targets, indices, diagnostics = train_fold(
             setup=setup,
             cfg=cfg,
             encodings=encodings,
@@ -68,6 +69,7 @@ def run_one_seed(data, setup_name, seed, cfg, run_dir, overwrite=False):
             labels=data.labels,
             split_indices=split,
             device=device,
+            initialization_seed=fold_seed,
         )
         fold_result["fold"] = fold
         fold_result["n_all_missing_train_features"] = (
@@ -76,6 +78,15 @@ def run_one_seed(data, setup_name, seed, cfg, run_dir, overwrite=False):
         fold_results.append(fold_result)
         oof_predictions[indices] = predictions
         oof_targets[indices] = targets
+        if diagnostics:
+            for name, values in diagnostics.items():
+                if name not in oof_diagnostics:
+                    oof_diagnostics[name] = np.full(
+                        (len(data.labels), *values.shape[1:]),
+                        np.nan,
+                        dtype=np.float32,
+                    )
+                oof_diagnostics[name][indices] = values
         print(
             f"  fold {fold}/{cfg.n_folds}: "
             f"acc {fold_result['test']['accuracy']:.3f}, "
@@ -89,6 +100,38 @@ def run_one_seed(data, setup_name, seed, cfg, run_dir, overwrite=False):
     pooled = classification_metrics(oof_targets, oof_predictions)
     accuracies = [fold["test"]["accuracy"] for fold in fold_results]
     macro_f1s = [fold["test"]["macro_f1"] for fold in fold_results]
+    prediction_rows = []
+    for row, (sentence_id, target, prediction) in enumerate(
+        zip(data.sentence_ids, oof_targets, oof_predictions)
+    ):
+        item = {
+            "sentence_id": int(sentence_id),
+            "target": int(target),
+            "prediction": int(prediction),
+        }
+        if oof_diagnostics:
+            item["diagnostics"] = {
+                "text_embedding_norm": float(
+                    oof_diagnostics["text_embedding_norm"][row]
+                ),
+                "eeg_embedding_norm": float(
+                    oof_diagnostics["eeg_embedding_norm"][row]
+                ),
+                "candidate_eeg_contribution_norm": float(
+                    oof_diagnostics["candidate_eeg_contribution_norm"][row]
+                ),
+                "gated_eeg_contribution_norm": float(
+                    oof_diagnostics["gated_eeg_contribution_norm"][row]
+                ),
+                "logits_with_eeg": oof_diagnostics["logits_with_eeg"][
+                    row
+                ].tolist(),
+                "logits_without_eeg": oof_diagnostics["logits_without_eeg"][
+                    row
+                ].tolist(),
+            }
+        prediction_rows.append(item)
+
     result = {
         "setup": setup_name,
         "seed": seed,
@@ -96,6 +139,7 @@ def run_one_seed(data, setup_name, seed, cfg, run_dir, overwrite=False):
         "fusion": setup.fusion,
         "text_mode": setup.text_mode,
         "eeg_control": setup.eeg_control,
+        "zero_eeg_contribution": setup.zero_eeg_contribution,
         "n_folds": cfg.n_folds,
         "fold_accuracy_mean": float(np.mean(accuracies)),
         "fold_accuracy_std": float(np.std(accuracies)),
@@ -103,16 +147,7 @@ def run_one_seed(data, setup_name, seed, cfg, run_dir, overwrite=False):
         "fold_macro_f1_std": float(np.std(macro_f1s)),
         "oof": pooled,
         "folds": fold_results,
-        "predictions": [
-            {
-                "sentence_id": int(sentence_id),
-                "target": int(target),
-                "prediction": int(prediction),
-            }
-            for sentence_id, target, prediction in zip(
-                data.sentence_ids, oof_targets, oof_predictions
-            )
-        ],
+        "predictions": prediction_rows,
     }
     save_json(result, path)
     print(

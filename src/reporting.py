@@ -31,6 +31,151 @@ def _prediction_arrays(result):
     return sentence_ids, targets, predictions
 
 
+def _validate_matched_initializations(grouped):
+    """Verify that gated controls used the same task-head initialization."""
+    families = {}
+    for setup, values in grouped.items():
+        if not setup.startswith("gated_"):
+            continue
+        for result in values:
+            for fold in result["folds"]:
+                initialization = fold.get("initialization") or {}
+                fingerprint = initialization.get("task_sha256")
+                if not fingerprint:
+                    continue
+                key = (result["text_mode"], result["seed"], fold["fold"])
+                families.setdefault(key, {})[setup] = fingerprint
+
+    verified = 0
+    for key, setup_fingerprints in families.items():
+        if len(setup_fingerprints) < 2:
+            continue
+        if len(set(setup_fingerprints.values())) != 1:
+            raise ValueError(
+                "gated controls did not start from matched task weights for "
+                f"text_mode={key[0]}, seed={key[1]}, fold={key[2]}: "
+                f"{setup_fingerprints}"
+            )
+        verified += 1
+    return verified
+
+
+def _diagnostic_frame(grouped):
+    rows = []
+    for setup, values in sorted(grouped.items()):
+        fold_values = [
+            fold
+            for result in values
+            for fold in result["folds"]
+            if fold.get("diagnostics")
+        ]
+        if not fold_values:
+            continue
+        gates = [
+            gate
+            for fold in fold_values
+            for gate in (fold.get("gate_values") or [])
+        ]
+
+        def mean_stat(name):
+            return float(
+                np.mean([fold["diagnostics"][name]["mean"] for fold in fold_values])
+            )
+
+        text_norm = mean_stat("text_embedding_norm")
+        candidate_norm = mean_stat("candidate_eeg_contribution_norm")
+        effective_norm = mean_stat("gated_eeg_contribution_norm")
+        changed = sum(
+            fold["diagnostics"]["prediction_changed_without_eeg_count"]
+            for fold in fold_values
+        )
+        examples = sum(fold["n_test"] for fold in fold_values)
+        rows.append(
+            {
+                "setup": setup,
+                "n_seeds": len(values),
+                "text_embedding_norm_mean": text_norm,
+                "eeg_embedding_norm_mean": mean_stat("eeg_embedding_norm"),
+                "candidate_eeg_contribution_norm_mean": candidate_norm,
+                "gated_eeg_contribution_norm_mean": effective_norm,
+                "candidate_to_text_norm_ratio": candidate_norm / max(text_norm, 1e-12),
+                "effective_to_text_norm_ratio": effective_norm / max(text_norm, 1e-12),
+                "logit_delta_l2_mean": mean_stat("logit_delta_l2"),
+                "prediction_changed_without_eeg_rate": changed / max(examples, 1),
+                "gate_mean": float(np.mean(gates)) if gates else np.nan,
+                "gate_min": float(np.min(gates)) if gates else np.nan,
+                "gate_max": float(np.max(gates)) if gates else np.nan,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _control_comparison_frame(grouped, bootstrap_samples):
+    rows = []
+    controls = ["shuffled", "noise", "zero"]
+    for text_mode in ["frozen", "finetune"]:
+        aligned_name = f"gated_{text_mode}"
+        if aligned_name not in grouped:
+            continue
+        aligned_by_seed = {
+            result["seed"]: result for result in grouped[aligned_name]
+        }
+        for control in controls:
+            control_name = f"gated_{control}_{text_mode}"
+            if control_name not in grouped:
+                continue
+            comparisons = []
+            agreements = []
+            control_f1s = []
+            aligned_f1s = []
+            for result in grouped[control_name]:
+                aligned = aligned_by_seed.get(result["seed"])
+                if aligned is None:
+                    continue
+                ids_a, targets_a, predictions_a = _prediction_arrays(aligned)
+                ids_c, targets_c, predictions_c = _prediction_arrays(result)
+                if not np.array_equal(ids_a, ids_c) or not np.array_equal(
+                    targets_a, targets_c
+                ):
+                    raise ValueError("gated controls do not contain the same sentences")
+                comparisons.append(
+                    paired_bootstrap_delta(
+                        targets_a,
+                        predictions_c,
+                        predictions_a,
+                        seed=result["seed"],
+                        samples=bootstrap_samples,
+                    )
+                )
+                agreements.append(float(np.mean(predictions_a == predictions_c)))
+                aligned_f1s.append(aligned["oof"]["macro_f1"])
+                control_f1s.append(result["oof"]["macro_f1"])
+            if comparisons:
+                rows.append(
+                    {
+                        "text_mode": text_mode,
+                        "aligned_setup": aligned_name,
+                        "control_setup": control_name,
+                        "n_seeds": len(comparisons),
+                        "aligned_macro_f1_mean": float(np.mean(aligned_f1s)),
+                        "control_macro_f1_mean": float(np.mean(control_f1s)),
+                        "delta_aligned_minus_control": float(
+                            np.mean(
+                                [item["delta_macro_f1"] for item in comparisons]
+                            )
+                        ),
+                        "delta_ci95_low": float(
+                            np.mean([item["ci95_low"] for item in comparisons])
+                        ),
+                        "delta_ci95_high": float(
+                            np.mean([item["ci95_high"] for item in comparisons])
+                        ),
+                        "prediction_agreement_mean": float(np.mean(agreements)),
+                    }
+                )
+    return pd.DataFrame(rows)
+
+
 def build_summary(run_dir, bootstrap_samples=2000):
     results = load_results(run_dir)
     if not results:
@@ -38,6 +183,7 @@ def build_summary(run_dir, bootstrap_samples=2000):
     grouped = {}
     for result in results:
         grouped.setdefault(result["setup"], []).append(result)
+    matched_groups = _validate_matched_initializations(grouped)
 
     rows = []
     for setup, values in sorted(grouped.items()):
@@ -103,21 +249,77 @@ def build_summary(run_dir, bootstrap_samples=2000):
     frame.to_csv(os.path.join(tables_dir, "summary.csv"), index=False)
     save_json(rows, os.path.join(tables_dir, "summary.json"))
     _write_markdown(frame, os.path.join(tables_dir, "summary.md"))
+
+    diagnostics = _diagnostic_frame(grouped)
+    if not diagnostics.empty:
+        diagnostics.to_csv(
+            os.path.join(tables_dir, "diagnostics.csv"), index=False
+        )
+        save_json(
+            diagnostics.to_dict(orient="records"),
+            os.path.join(tables_dir, "diagnostics.json"),
+        )
+        _write_markdown(
+            diagnostics,
+            os.path.join(tables_dir, "diagnostics.md"),
+            title="Gated-modality diagnostics",
+            description=(
+                "Norms and logit effects are evaluated on held-out fold "
+                "sentences after loading each fold's best checkpoint."
+            ),
+        )
+
+    control_comparisons = _control_comparison_frame(grouped, bootstrap_samples)
+    if not control_comparisons.empty:
+        control_comparisons.to_csv(
+            os.path.join(tables_dir, "control_comparisons.csv"), index=False
+        )
+        save_json(
+            control_comparisons.to_dict(orient="records"),
+            os.path.join(tables_dir, "control_comparisons.json"),
+        )
+        _write_markdown(
+            control_comparisons,
+            os.path.join(tables_dir, "control_comparisons.md"),
+            title="Aligned EEG against gated controls",
+            description=(
+                "Positive deltas favor aligned EEG. Intervals are paired "
+                "sentence-level bootstrap diagnostics averaged across seeds."
+            ),
+        )
+
+    save_json(
+        {
+            "matched_initialization_groups_verified": matched_groups,
+            "fingerprint_scope": (
+                "all task modules; pretrained text_encoder weights are "
+                "identified by the shared model checkpoint"
+            ),
+        },
+        os.path.join(tables_dir, "diagnostic_metadata.json"),
+    )
     _plot_scores(frame, os.path.join(run_dir, "plots", "scores.png"))
     _plot_confusions(grouped, os.path.join(run_dir, "plots", "confusions.png"))
     return frame
 
 
-def _write_markdown(frame, path):
+def _write_markdown(
+    frame,
+    path,
+    title="ZuCo multimodal sentiment results",
+    description=(
+        "Macro-F1 is the primary metric. Delta intervals are paired "
+        "sentence-level bootstrap intervals against the matching text-only setup."
+    ),
+):
     display = frame.copy()
     numeric = display.select_dtypes(include=[np.number]).columns
     display[numeric] = display[numeric].round(4)
     columns = list(display.columns)
     lines = [
-        "# ZuCo multimodal sentiment results",
+        f"# {title}",
         "",
-        "Macro-F1 is the primary metric. Delta intervals are paired sentence-level ",
-        "bootstrap intervals against the matching text-only setup.",
+        description,
         "",
         "| " + " | ".join(columns) + " |",
         "| " + " | ".join("---" for _ in columns) + " |",

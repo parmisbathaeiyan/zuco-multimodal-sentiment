@@ -65,6 +65,16 @@ class DataTests(unittest.TestCase):
             self.assertEqual(before, after)
         np.testing.assert_array_equal(mask, shuffled_mask)
 
+    def test_zero_control_preserves_input_for_model_level_ablation(self):
+        eeg = np.arange(12, dtype=np.float32).reshape(6, 1, 2)
+        mask = np.ones((6, 1), dtype=bool)
+        splits = (np.array([0, 1, 2]), np.array([3]), np.array([4, 5]))
+        controlled, controlled_mask = apply_eeg_control(
+            eeg, mask, splits, "zero", 42
+        )
+        np.testing.assert_array_equal(controlled, eeg)
+        np.testing.assert_array_equal(controlled_mask, mask)
+
     def test_subject_caches_align_by_sentence_id(self):
         with tempfile.TemporaryDirectory() as directory:
             labels_path = os.path.join(directory, "labels.csv")

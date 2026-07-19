@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 
 from src.features import N_FAMILIES
+from src.engine import task_initialization_fingerprint
 from src.model import EEGSetEncoder, MultimodalClassifier
 
 
@@ -48,15 +49,67 @@ class ModelTests(unittest.TestCase):
             eeg_dim=6,
             dropout=0.0,
         )
-        logits, weights = model(
+        logits, weights, diagnostics = model(
             input_ids=torch.randint(0, 20, (4, 7)),
             attention_mask=torch.ones(4, 7, dtype=torch.long),
             eeg=torch.randn(4, 3, 5 * N_FAMILIES),
             subject_mask=torch.ones(4, 3, dtype=torch.bool),
+            return_diagnostics=True,
         )
         self.assertEqual(tuple(logits.shape), (4, 3))
         self.assertEqual(tuple(weights.shape), (4, 3, 5))
+        self.assertEqual(tuple(diagnostics["logits_without_eeg"].shape), (4, 3))
+        self.assertEqual(len(model.gate_values()), 10)
         self.assertLess(model.gate_mean(), 0.2)
+
+    @patch("src.model.AutoModel.from_pretrained", return_value=DummyTextEncoder())
+    def test_zero_gated_contribution_preserves_text_only_logits(self, _):
+        model = MultimodalClassifier(
+            model_name="dummy",
+            fusion="gated",
+            text_mode="finetune",
+            n_channels=5,
+            text_dim=10,
+            channel_dim=8,
+            eeg_dim=6,
+            dropout=0.0,
+            zero_eeg_contribution=True,
+        )
+        logits, _, diagnostics = model(
+            input_ids=torch.randint(0, 20, (4, 7)),
+            attention_mask=torch.ones(4, 7, dtype=torch.long),
+            eeg=torch.randn(4, 3, 5 * N_FAMILIES),
+            subject_mask=torch.ones(4, 3, dtype=torch.bool),
+            return_diagnostics=True,
+        )
+        torch.testing.assert_close(logits, diagnostics["logits_without_eeg"])
+        torch.testing.assert_close(
+            diagnostics["gated_eeg_contribution_norm"], torch.zeros(4)
+        )
+        self.assertTrue(
+            torch.all(diagnostics["candidate_eeg_contribution_norm"] > 0)
+        )
+
+    @patch("src.model.AutoModel.from_pretrained", return_value=DummyTextEncoder())
+    def test_gated_task_initialization_is_reproducible(self, _):
+        kwargs = {
+            "model_name": "dummy",
+            "fusion": "gated",
+            "text_mode": "finetune",
+            "n_channels": 5,
+            "text_dim": 10,
+            "channel_dim": 8,
+            "eeg_dim": 6,
+            "dropout": 0.0,
+        }
+        torch.manual_seed(1042)
+        aligned = MultimodalClassifier(**kwargs)
+        aligned_fingerprint = task_initialization_fingerprint(aligned)
+        torch.manual_seed(1042)
+        zero = MultimodalClassifier(**kwargs, zero_eeg_contribution=True)
+        self.assertEqual(
+            aligned_fingerprint, task_initialization_fingerprint(zero)
+        )
 
 
 if __name__ == "__main__":

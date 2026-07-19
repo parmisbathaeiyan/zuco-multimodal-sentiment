@@ -614,3 +614,122 @@ control, save modality and logit norms, and compare frozen-text gated fusion
 against frozen text only. These checks can distinguish a genuine EEG effect
 from initialization and optimization effects and test whether fine-tuned text
 is simply overpowering the EEG branch.
+
+## 2026-07-19 — Record interpretation details for future architecture work
+
+Two observations from the first result analysis are important for later
+feature-by-architecture experiments:
+
+1. The poor EEG-only result does not prove that ZuCo EEG contains no sentiment
+   information. Equal averaging across readers may wash out subject-specific
+   patterns; 2,496 handcrafted summary features may be noisy or redundant; 400
+   sentences provide a small training set; the present channel-attention plus
+   subject-mean encoder may be unsuitable; and useful sentiment information may
+   require temporal or word-level EEG rather than sentence-level statistics.
+2. Positive sentiment was consistently the easiest class. Neutral sentiment was
+   the hardest for the text and multimodal systems and was often confused with
+   negative sentiment. Future error analysis and architecture comparisons
+   should retain per-class results instead of relying only on overall accuracy.
+
+The future architecture matrix should explicitly include both:
+
+- pooled-across-subjects models, beginning with the present equal mean and then
+  learned subject attention;
+- subject-specific models, trained and evaluated per reader before aggregating
+  conclusions across readers.
+
+The same aligned, shuffled, noise, and zero controls should be applied to both
+forms. Subject-specific and learned-pooling implementations remain a later
+stage, after the controlled diagnostic experiment determines whether the
+current gated branch is being used at all.
+
+## 2026-07-19 — Audit the epoch explanation
+
+Every setup in `v1_full` had the same maximum of 12 epochs and patience of four.
+The gated setup was not assigned a larger explicit epoch budget. Early stopping
+did, however, allow it to train longer on average:
+
+```text
+text_finetune
+  mean selected best epoch: 5.93
+  mean epochs actually run: 9.33
+
+gated_finetune
+  mean selected best epoch: 7.27
+  mean epochs actually run: 10.93
+```
+
+The fine-tuned text encoder in the gated model therefore received more optimizer
+updates on average. This could contribute to the higher gated score. It is not
+an unfair command-line setting—the validation procedure selected checkpoints
+independently—but it is an optimization-path difference that prevents the
+original score gap from being interpreted as an EEG effect. The forced-zero
+gated control is intended to isolate this: it keeps the gated architecture,
+initialization, dropout computations, optimizer schedule, and early-stopping
+behavior while making the EEG contribution exactly zero.
+
+## 2026-07-19 — Implement the controlled diagnostic experiment
+
+The next experiment is versioned as `v2_controlled_diagnostics`. The
+implementation adds:
+
+- `gated_zero_finetune` and `gated_zero_frozen`;
+- explicit resetting of the initialization seed immediately before model
+  construction;
+- a SHA-256 fingerprint of all randomly initialized task modules, excluding the
+  shared pretrained LaBSE checkpoint;
+- report-time verification that aligned, shuffled, noise, and zero controls
+  have identical task fingerprints for each text mode, seed, and fold;
+- complete final sigmoid gate values for every fold rather than only their mean;
+- held-out text embedding norms;
+- held-out raw EEG embedding norms;
+- candidate and effective gated EEG-contribution norms;
+- held-out logits with and without the EEG contribution;
+- the rate at which removing EEG changes the predicted class;
+- direct aligned-versus-shuffled, aligned-versus-noise, and
+  aligned-versus-zero tables.
+
+The zero model still constructs and executes the same EEG encoder and gated
+modules so its random-number and optimization path matches the other gated
+controls. Its contribution is replaced by an exact zero tensor before fusion,
+so it cannot pass EEG information to the classifier.
+
+The Colab notebook now contains:
+
+```text
+section 12: short matched-control smoke test
+section 13: fine-tuned text and four gated controls
+section 14: frozen text and four gated controls
+section 15: score, control-comparison, diagnostic, and fingerprint outputs
+```
+
+Sections 13 and 14 share the same resumable Drive run folder. This allows the
+fine-tuned and frozen phases to be run separately without losing or repeating
+completed setup/seed files.
+
+## 2026-07-19 — Clarify seeds, folds, and bootstrap uncertainty
+
+The five folds and three seeds are part of model training and evaluation:
+
+- Within one seed, five-fold cross-validation partitions the 400 sentences.
+  Each sentence is a test example exactly once, producing 400 out-of-fold
+  predictions for that seed.
+- Three seeds repeat the complete five-fold process with different splits,
+  model initialization, data order, and stochastic training. This produces
+  three macro-F1 values and three sets of 400 paired predictions.
+
+The bootstrap is a separate analysis performed after training. For one seed,
+the reporter repeatedly samples 400 sentence positions with replacement from
+the paired baseline and candidate predictions. It recalculates both macro-F1
+scores and their difference for every resample. The 2.5th and 97.5th
+percentiles form the reported sentence-level 95% bootstrap interval.
+
+The current summary computes this bootstrap separately for each seed and then
+averages the three observed differences and the three interval endpoints. It
+answers a limited question: how uncertain is the paired score difference under
+resampling of these ZuCo sentences for these trained models? It is not a formal
+confidence interval over arbitrary training seeds, new readers, or a new
+dataset. Five folds do not provide five independent datasets, because together
+they form one out-of-fold prediction set over the same 400 sentences. Three
+seeds are also too few to estimate the full distribution of training
+randomness. Thesis reporting should state this scope explicitly.

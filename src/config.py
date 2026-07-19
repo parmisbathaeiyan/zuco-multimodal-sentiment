@@ -35,6 +35,8 @@ VALID_SETUPS = [
     "gated_shuffled_finetune",
     "gated_noise_frozen",
     "gated_noise_finetune",
+    "gated_zero_frozen",
+    "gated_zero_finetune",
 ]
 
 
@@ -53,6 +55,10 @@ class Setup:
     def uses_eeg(self):
         return self.fusion != "text"
 
+    @property
+    def zero_eeg_contribution(self):
+        return self.fusion == "gated" and self.eeg_control == "zero"
+
 
 def parse_setup(name):
     """Turn a public setup name into explicit model choices."""
@@ -69,6 +75,8 @@ def parse_setup(name):
         control = "shuffled"
     elif "_noise_" in name:
         control = "noise"
+    elif "_zero_" in name:
+        control = "zero"
     else:
         control = "aligned"
     return Setup(name=name, fusion=fusion, text_mode=text_mode, eeg_control=control)

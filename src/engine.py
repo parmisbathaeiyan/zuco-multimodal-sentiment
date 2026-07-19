@@ -1,6 +1,7 @@
 """Training and evaluation for one sentence-level fold."""
 
 import copy
+import hashlib
 
 import numpy as np
 import torch
@@ -12,6 +13,7 @@ from .data import SentenceDataset
 from .features import N_FAMILIES
 from .metrics import classification_metrics
 from .model import MultimodalClassifier
+from .utils import set_seed
 
 
 def pick_device():
@@ -57,16 +59,75 @@ def _autocast(device, use_amp):
     return torch.cuda.amp.autocast(enabled=use_amp)
 
 
+def task_initialization_fingerprint(model):
+    """Hash the randomly initialized task modules without copying LaBSE."""
+    digest = hashlib.sha256()
+    for name, value in model.state_dict().items():
+        if name.startswith("text_encoder."):
+            continue
+        tensor = value.detach().cpu().contiguous()
+        digest.update(name.encode("utf-8"))
+        digest.update(str(tensor.dtype).encode("utf-8"))
+        digest.update(str(tuple(tensor.shape)).encode("utf-8"))
+        digest.update(tensor.numpy().tobytes())
+    return digest.hexdigest()
+
+
+def _summarize_diagnostics(diagnostics):
+    if not diagnostics:
+        return None
+    summary = {}
+    for name in [
+        "text_embedding_norm",
+        "eeg_embedding_norm",
+        "candidate_eeg_contribution_norm",
+        "gated_eeg_contribution_norm",
+    ]:
+        values = diagnostics[name]
+        summary[name] = {
+            "mean": float(values.mean()),
+            "std": float(values.std()),
+            "min": float(values.min()),
+            "max": float(values.max()),
+        }
+    logit_delta = (
+        diagnostics["logits_with_eeg"] - diagnostics["logits_without_eeg"]
+    )
+    changed = (
+        diagnostics["logits_with_eeg"].argmax(axis=-1)
+        != diagnostics["logits_without_eeg"].argmax(axis=-1)
+    )
+    summary["logit_delta_l2"] = {
+        "mean": float(np.linalg.norm(logit_delta, axis=-1).mean()),
+        "std": float(np.linalg.norm(logit_delta, axis=-1).std()),
+        "min": float(np.linalg.norm(logit_delta, axis=-1).min()),
+        "max": float(np.linalg.norm(logit_delta, axis=-1).max()),
+    }
+    summary["prediction_changed_without_eeg_count"] = int(changed.sum())
+    summary["prediction_changed_without_eeg_rate"] = float(changed.mean())
+    return summary
+
+
 @torch.no_grad()
-def evaluate(model, loader, device, criterion):
+def evaluate(model, loader, device, criterion, collect_diagnostics=False):
     model.eval()
     total_loss = 0.0
     predictions, targets, indices = [], [], []
+    diagnostic_batches = {}
     for batch in loader:
         batch = _move(batch, device)
         labels = batch.pop("labels")
         sentence_index = batch.pop("sentence_index")
-        logits, _ = model(**batch)
+        if collect_diagnostics:
+            logits, _, batch_diagnostics = model(
+                **batch, return_diagnostics=True
+            )
+            for name, values in batch_diagnostics.items():
+                diagnostic_batches.setdefault(name, []).append(
+                    values.detach().float().cpu().numpy()
+                )
+        else:
+            logits, _ = model(**batch)
         total_loss += criterion(logits, labels).item() * len(labels)
         predictions.append(logits.argmax(dim=-1).cpu().numpy())
         targets.append(labels.cpu().numpy())
@@ -76,6 +137,12 @@ def evaluate(model, loader, device, criterion):
     indices = np.concatenate(indices)
     metrics = classification_metrics(targets, predictions)
     metrics["loss"] = total_loss / len(targets)
+    if collect_diagnostics:
+        diagnostics = {
+            name: np.concatenate(values, axis=0)
+            for name, values in diagnostic_batches.items()
+        }
+        return metrics, predictions, targets, indices, diagnostics
     return metrics, predictions, targets, indices
 
 
@@ -88,6 +155,7 @@ def train_fold(
     labels,
     split_indices,
     device=None,
+    initialization_seed=None,
 ):
     train_indices, val_indices, test_indices = split_indices
     device = device or pick_device()
@@ -99,6 +167,8 @@ def train_fold(
     val_loader = _loader(datasets[1], cfg.batch_size, False, cfg.num_workers)
     test_loader = _loader(datasets[2], cfg.batch_size, False, cfg.num_workers)
 
+    if initialization_seed is not None:
+        set_seed(initialization_seed)
     model = MultimodalClassifier(
         model_name=cfg.model_name,
         fusion=setup.fusion,
@@ -108,7 +178,9 @@ def train_fold(
         channel_dim=cfg.channel_dim,
         eeg_dim=cfg.eeg_dim,
         dropout=cfg.dropout,
+        zero_eeg_contribution=setup.zero_eeg_contribution,
     ).to(device)
+    initialization_fingerprint = task_initialization_fingerprint(model)
     optimizer = build_optimizer(model, cfg)
     total_steps = max(1, len(train_loader) * cfg.epochs)
     scheduler = get_linear_schedule_with_warmup(
@@ -170,15 +242,31 @@ def train_fold(
                 break
 
     model.load_state_dict(best_state)
-    test_metrics, predictions, targets, indices = evaluate(
-        model, test_loader, device, criterion
-    )
+    if setup.fusion == "gated":
+        test_metrics, predictions, targets, indices, diagnostics = evaluate(
+            model,
+            test_loader,
+            device,
+            criterion,
+            collect_diagnostics=True,
+        )
+    else:
+        test_metrics, predictions, targets, indices = evaluate(
+            model, test_loader, device, criterion
+        )
+        diagnostics = None
     result = {
         "best_epoch": best_epoch,
         "best_val_macro_f1": best_val_f1,
         "test": test_metrics,
         "history": history,
         "gate_mean": model.gate_mean(),
+        "gate_values": model.gate_values(),
+        "diagnostics": _summarize_diagnostics(diagnostics),
+        "initialization": {
+            "seed": initialization_seed,
+            "task_sha256": initialization_fingerprint,
+        },
         "n_train": int(len(train_indices)),
         "n_val": int(len(val_indices)),
         "n_test": int(len(test_indices)),
@@ -186,4 +274,4 @@ def train_fold(
     del model
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-    return result, predictions, targets, indices
+    return result, predictions, targets, indices, diagnostics
