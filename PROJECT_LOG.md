@@ -737,3 +737,55 @@ dataset. Five folds do not provide five independent datasets, because together
 they form one out-of-fold prediction set over the same 400 sentences. Three
 seeds are also too few to estimate the full distribution of training
 randomness. Thesis reporting should state this scope explicitly.
+
+## 2026-07-19 — Complete and verify the controlled diagnostic smoke test
+
+The `v2_controlled_diagnostics_smoke` run completed and was audited directly
+from Drive. Both expected seed files are present:
+
+```text
+gated_finetune/seed_42.json
+gated_zero_finetune/seed_42.json
+```
+
+The summary, control-comparison, diagnostic, metadata, and plot artifacts were
+also generated successfully. The report verified matching task-module
+initialization fingerprints for both seed/fold groups:
+
+```text
+matched_initialization_groups_verified: 2
+```
+
+The one-epoch, two-fold integration scores were:
+
+```text
+gated_finetune:      accuracy 0.4525, macro-F1 0.4237
+gated_zero_finetune: accuracy 0.4550, macro-F1 0.4279
+```
+
+Aligned gated fusion was `-0.0043` macro-F1 below the forced-zero control, with
+a smoke bootstrap interval of `[-0.0138, 0.0047]`. Their class predictions
+agreed on `98.75%` of sentences. These scores are not substantive experiment
+results because the smoke test used one seed, two folds, and one epoch.
+
+The diagnostic path behaved as designed:
+
+```text
+gated_finetune
+  candidate/effective contribution-to-text norm ratio: 0.0648
+  mean logit-delta L2:                              0.0322
+  predictions changed when EEG was removed:        6.0%
+
+gated_zero_finetune
+  candidate contribution-to-text norm ratio:       0.0634
+  effective contribution-to-text norm ratio:       0.0000
+  mean logit-delta L2:                              0.0000
+  predictions changed when EEG was removed:        0.0%
+```
+
+The zero setup therefore preserved and measured the candidate EEG branch while
+blocking its effective contribution exactly. This validates the new control and
+saved diagnostics before the expensive run.
+
+No `v2_controlled_diagnostics` full-run folder exists yet. Sections 13 and 14
+remain to be run, followed by section 15 for the complete controlled results.
