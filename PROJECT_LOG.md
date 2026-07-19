@@ -460,3 +460,54 @@ therefore disconnected while starting the final seed.
 There are still no final tables or plots. Resuming section 9 with
 `RUN_TAG=v1_full` will skip the 20 completed jobs, rerun all five folds of the
 remaining noise seed, and then build the final reports.
+
+## 2026-07-19 — Complete the full experiment suite and generate reports
+
+Section 9 was resumed again with the same `RUN_TAG=v1_full`. The runner skipped
+the 20 durable setup/seed results, completed `gated_noise_finetune` seed 62, and
+then generated the final reports. Drive now contains all 21 planned result JSON
+files: seven setups with seeds 42, 52, and 62.
+
+The reporting stage completed successfully and created:
+
+```text
+tables/summary.csv
+tables/summary.json
+tables/summary.md
+plots/scores.png
+plots/confusions.png
+```
+
+The final three-seed summary is:
+
+| setup | accuracy mean | accuracy SD | macro-F1 mean | macro-F1 SD | mean gate |
+|---|---:|---:|---:|---:|---:|
+| `text_frozen` | 0.6033 | 0.0077 | 0.5971 | 0.0093 | — |
+| `text_finetune` | 0.6792 | 0.0246 | 0.6766 | 0.0237 | — |
+| `eeg_only` | 0.3392 | 0.0319 | 0.2809 | 0.0156 | — |
+| `concat_finetune` | 0.6850 | 0.0256 | 0.6801 | 0.0260 | — |
+| `gated_finetune` | 0.7067 | 0.0083 | 0.7019 | 0.0088 | 0.1193 |
+| `gated_shuffled_finetune` | 0.7058 | 0.0072 | 0.7006 | 0.0072 | 0.1193 |
+| `gated_noise_finetune` | 0.7067 | 0.0062 | 0.7015 | 0.0062 | 0.1193 |
+
+Relative to fine-tuned text only, the paired macro-F1 results were:
+
+```text
+concat_finetune:          +0.0035, 95% CI [-0.0368, 0.0439]
+gated_finetune:           +0.0253, 95% CI [-0.0124, 0.0630]
+gated_shuffled_finetune:  +0.0240, 95% CI [-0.0140, 0.0619]
+gated_noise_finetune:     +0.0249, 95% CI [-0.0131, 0.0628]
+```
+
+The aligned gated model is numerically the best setup, but its result is almost
+identical to the shuffled-EEG and random-noise controls. Every paired confidence
+interval includes zero. This experiment therefore does not provide evidence
+that correctly aligned EEG information improved sentiment classification. The
+small gated-model gain is more consistent with an architectural or
+regularization effect from the added branch. Simple concatenation also did not
+meaningfully improve over the fine-tuned text baseline. EEG alone remained
+weak, and fine-tuning LaBSE clearly outperformed freezing it.
+
+The learned gate stayed near its approximately `0.119` initialization in all
+three gated conditions. This and the negative-control results should be
+considered when choosing the next architecture or diagnostic experiment.
