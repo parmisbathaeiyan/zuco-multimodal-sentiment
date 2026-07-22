@@ -817,3 +817,72 @@ files and restart the five folds of the missing zero-control seed 62.
 
 Section 14 has not started. Across both planned full diagnostic phases, 14 of
 30 setup/seed jobs are currently complete.
+
+## 2026-07-22 — Complete the fine-tuned controlled diagnostic phase
+
+Section 13 completed after resuming the missing `gated_zero_finetune` seed 62.
+Drive now contains all 15 planned fine-tuned setup/seed JSON files, along with
+summary, direct-control, diagnostic, metadata, score-plot, and confusion-plot
+artifacts.
+
+The matched-initialization check passed for all 15 seed/fold groups:
+
+```text
+matched_initialization_groups_verified: 15
+```
+
+The three-seed results were:
+
+| setup | accuracy mean | accuracy SD | macro-F1 mean | macro-F1 SD |
+|---|---:|---:|---:|---:|
+| `text_finetune` | 0.6792 | 0.0246 | 0.6766 | 0.0237 |
+| `gated_finetune` | 0.7067 | 0.0082 | 0.7019 | 0.0088 |
+| `gated_shuffled_finetune` | 0.7058 | 0.0072 | 0.7006 | 0.0072 |
+| `gated_noise_finetune` | 0.7067 | 0.0062 | 0.7015 | 0.0061 |
+| `gated_zero_finetune` | 0.7075 | 0.0061 | 0.7028 | 0.0065 |
+
+All four gated forms scored about `0.024`–`0.026` macro-F1 above the original
+text-only model, and every interval against text included zero. More
+importantly, the direct aligned-control comparisons were:
+
+```text
+aligned minus shuffled: +0.00128, CI [-0.00304, 0.00571], agreement 99.33%
+aligned minus noise:    +0.00038, CI [-0.00583, 0.00564], agreement 99.25%
+aligned minus zero:     -0.00089, CI [-0.00564, 0.00283], agreement 99.75%
+```
+
+The forced-zero model was numerically the best fine-tuned setup. Its per-seed
+macro-F1 values were `0.7107`, `0.7030`, and `0.6948`. The aligned and zero
+models also selected the same best epochs in every fold and ran the same number
+of epochs, providing a direct check on the earlier concern that longer gated
+training might explain the score gap.
+
+Held-out branch diagnostics showed:
+
+```text
+aligned EEG contribution / text norm: 1.78%
+aligned mean logit-delta L2:          0.0360
+aligned predictions changed if EEG removed: 0.0833% (1 of 1,200)
+
+shuffled predictions changed if EEG removed: 0.1667% (2 of 1,200)
+noise predictions changed if EEG removed:    0.2500% (3 of 1,200)
+zero predictions changed if EEG removed:     0.0000%
+```
+
+The full gate mean remained almost exactly at its `0.1192` initialization. The
+aligned branch was only about 1.8% of the text-vector norm and altered one final
+decision across three complete out-of-fold prediction sets. Shuffled EEG and
+noise affected at least as many decisions, while forced-zero EEG achieved the
+highest score. This controlled phase therefore provides strong evidence that
+the fine-tuned classifier is not using alignment-specific EEG information.
+
+The shared gain and lower seed variability of all gated forms are attributable
+to the gated model's construction and stochastic optimization path rather than
+to EEG content. Because the zero model still constructs and executes the EEG
+branch but blocks its contribution, differences from the separately built
+text-only model can reflect module-initialization order and random-number usage.
+
+Section 14 has not been run: no `text_frozen`, `gated_frozen`,
+`gated_shuffled_frozen`, `gated_noise_frozen`, or `gated_zero_frozen` folders
+exist in the diagnostic run. The frozen-text phase remains necessary to test
+whether EEG becomes usable when LaBSE cannot adapt and dominate the task.
