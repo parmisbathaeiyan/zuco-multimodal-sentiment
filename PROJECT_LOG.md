@@ -950,3 +950,104 @@ only while displaying already generated files and did not affect training,
 saving, or reporting. The notebook was updated so section 15 imports `Image`,
 `Markdown`, and `display` itself and defines the diagnostic result path
 directly, making the display section safe after a runtime restart.
+
+## 2026-07-22 — Roadmap and stopping rules after the controlled diagnostics
+
+The controlled results are sufficient to stop tuning the present pipeline:
+sentence-level handcrafted EEG features, equal averaging across readers, and
+the current concatenation or gated-residual fusion architectures. Aligned EEG
+did not outperform shuffled, random-noise, or forced-zero controls under either
+fine-tuned or frozen LaBSE. More epochs, gate initializations, wider MLPs, or
+additional seeds are therefore not justified as attempts to make this exact
+pipeline succeed. The result is retained as a useful negative finding rather
+than treated as a failed run.
+
+The next work is divided into bounded phases.
+
+### Phase 0 — Close and analyze the present experiment
+
+Use the saved out-of-fold predictions and diagnostics without retraining to:
+
+1. analyze errors by class, text confidence, sentence length, reader coverage,
+   and especially the low-confidence text subset;
+2. determine whether aligned EEG helps any reproducible text-hard subset more
+   than shuffled, noise, and zero controls;
+3. report prediction flips and EEG logit contributions for those subsets; and
+4. improve uncertainty reporting where useful, distinguishing the present
+   sentence bootstrap diagnostics from variation across seeds and subjects.
+
+If no alignment-specific subset effect appears, the current fusion pipeline is
+closed permanently.
+
+### Phase 1 — One final viability test for the classical EEG features
+
+Before attaching EEG to text again, test whether the classical features can
+carry sentiment information on their own. Compare:
+
+- subject-specific models, evaluated separately for each reader;
+- pooled models using equal subject means;
+- a small learned subject-pooling model, such as attention or DeepSets; and
+- simple regularized baselines before larger neural models, including
+  multinomial logistic regression and a linear SVM.
+
+Retain aligned, shuffled-alignment, label-permutation, and chance or majority
+controls. Report both within-subject and cross-subject or leave-one-subject-out
+evaluation where the available sentence coverage permits it. A positive versus
+negative binary analysis may be included as a clearly labelled sensitivity
+analysis because neutral was the hardest class, but it must not replace the
+three-class result.
+
+**Stop gate A:** continue using these 2,496 sentence-level classical features
+only if aligned EEG beats its controls by a predeclared practically meaningful
+margin (provisionally at least `0.015` macro-F1), the direction is stable across
+seeds or a meaningful share of subjects, and a direct paired uncertainty
+interval supports a positive effect. If both subject-specific and learned
+pooled analyses fail this gate, stop using these features for sentiment fusion.
+
+### Phase 2 — One richer EEG-representation attempt
+
+This phase is a separate representation study, not another modification of the
+current MLP. Move from sentence summary statistics to the word/fixation-aligned
+or temporal EEG available in ZuCo. Limit the search to at most two compact EEG
+encoders, for example a small temporal CNN and a compact Transformer, and at
+most two fusion approaches, such as late logit fusion and word-aligned
+cross-attention. A self-supervised masked-EEG or contrastive EEG-text objective
+may be used on training-fold data to reduce dependence on the 400 sentiment
+labels. All representation learning must remain inside the training folds.
+
+**Stop gate B:** an aligned representation must outperform shuffled, noise,
+and zero controls by the predeclared margin with a positive direct paired
+interval. If this fails for the bounded representation families, stop pursuing
+the claim that ZuCo EEG improves sentiment classification. Do not begin a third
+rescue cycle without new independent evidence.
+
+### Phase 3 — Multimodal confirmation or a deliberate pivot
+
+If either EEG viability gate passes, return to multimodal classification and
+compare the successful EEG representation against text-only using identical
+initialization and training controls. Preserve an untouched final evaluation or
+use nested cross-validation to avoid selecting architectures on the same 400
+sentences.
+
+If the gates fail, pivot to one of the following research questions rather than
+continuing to tune sentiment fusion:
+
+- combine text with ZuCo eye-tracking features, which are directly aligned to
+  fixations and words;
+- study reading-task, difficulty, predictability, surprisal, or comprehension
+  signals instead of sentiment;
+- study subject variability, subject adaptation, and within-subject versus
+  cross-subject transfer;
+- analyze representational alignment between EEG and LaBSE with RSA, CKA, or
+  canonical-correlation methods rather than requiring a classification gain;
+- use EEG as privileged training information through an auxiliary or
+  contrastive objective, with text-only inference, but only after demonstrating
+  an alignment-specific EEG signal; or
+- apply the same controlled protocol to TECO or another dataset with more
+  trials or better temporal and label support.
+
+An acceptable final thesis direction is also the controlled negative result
+itself: apparent multimodal gains can be reproduced by shuffled, noise, and
+zero modalities, showing why modality-specific controls are necessary. This is
+more defensible than selecting a superficially better multimodal score after a
+large uncontrolled architecture search.
