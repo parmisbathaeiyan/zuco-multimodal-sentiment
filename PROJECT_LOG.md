@@ -789,3 +789,31 @@ saved diagnostics before the expensive run.
 
 No `v2_controlled_diagnostics` full-run folder exists yet. Sections 13 and 14
 remain to be run, followed by section 15 for the complete controlled results.
+
+## 2026-07-22 — Audit section 13 progress after interruption
+
+The `v2_controlled_diagnostics` Drive folder now contains 14 of the 15 planned
+fine-tuned controlled setup/seed files:
+
+```text
+text_finetune:                 seeds 42, 52, 62 complete
+gated_finetune:                seeds 42, 52, 62 complete
+gated_shuffled_finetune:       seeds 42, 52, 62 complete
+gated_noise_finetune:          seeds 42, 52, 62 complete
+gated_zero_finetune:           seeds 42, 52 complete
+```
+
+Section 13 is therefore `93.3%` complete. The only missing result is:
+
+```text
+gated_zero_finetune: seed 62
+```
+
+The last durable file was `gated_zero_finetune/seed_52.json`, saved at
+`2026-07-20 10:54:12 UTC` (`14:24:12` Tehran time). There are no section 13
+summary tables or plots yet because report generation starts only after every
+requested setup/seed job finishes. Rerunning section 13 will skip the 14 saved
+files and restart the five folds of the missing zero-control seed 62.
+
+Section 14 has not started. Across both planned full diagnostic phases, 14 of
+30 setup/seed jobs are currently complete.
